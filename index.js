@@ -8,13 +8,17 @@ import { createMonitor } from './src/monitor.js';
 import { parseClipboard } from './src/parser.js';
 import { writeTarget } from './src/writer.js';
 import { createZipWatcher, processZip } from './src/zipwatch.js';
+import { loadConfig, saveConfig, resetConfig, configPath } from './src/config.js';
 import { log, color } from './src/utils.js';
 
 const HELP = `RyClip — clipboard → file injector
 
   ryclip [opsi]
 
-  --root <dir>       root repo target (default: folder saat ini)
+  --root <dir>       root repo target (default: config, lalu folder saat ini)
+  --set-root <dir>   simpan root repo permanen, lalu keluar
+  --set-zip <dir>    simpan folder download permanen (dipakai --zip), lalu keluar
+  --show-config      tampilkan config   --reset-config  hapus config
   --interval <ms>    interval polling (default: 500)
   --min-lines <n>    clipboard tanpa @file lebih pendek dari n baris diabaikan (default: 3)
   --dry-run          tampilkan aksi tanpa menulis file
@@ -23,7 +27,7 @@ const HELP = `RyClip — clipboard → file injector
   --yes              clipboard tanpa @file di-skip otomatis (tanpa prompt)
   --initial          proses juga isi clipboard / zip yang sudah ada saat start
   --watch-zip <dir>  pantau folder untuk .zip baru, ekstrak ke root (dengan konfirmasi)
-  --zip              sama seperti --watch-zip, folder = ~/Downloads
+  --zip              pantau zip di folder dari --set-zip (default: ~/Downloads)
   --yes-zip          terapkan zip tanpa konfirmasi (backup tetap dibuat)
   -h, --help         bantuan
 
@@ -31,7 +35,11 @@ Tag (baris pertama): // @file: src/app.js   |   # @file: scripts/x.sh   |   /* @
 
 const { values: o } = parseArgs({
   options: {
-    root: { type: 'string', default: process.cwd() },
+    root: { type: 'string' },
+    'set-root': { type: 'string' },
+    'set-zip': { type: 'string' },
+    'show-config': { type: 'boolean', default: false },
+    'reset-config': { type: 'boolean', default: false },
     interval: { type: 'string', default: '500' },
     'min-lines': { type: 'string', default: '3' },
     'dry-run': { type: 'boolean', default: false },
@@ -51,7 +59,42 @@ if (o.help) {
   process.exit(0);
 }
 
-const root = path.resolve(o.root);
+const cfg = loadConfig();
+
+const dirOrDie = (d) => {
+  const p = path.resolve(d);
+  if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) {
+    log.err(`Folder tidak ditemukan: ${p}`);
+    process.exit(1);
+  }
+  return p;
+};
+const showConfig = (c) => {
+  console.log(`config : ${configPath()}`);
+  console.log(`root   : ${c.root ?? color.dim('(belum diatur → folder saat ini)')}`);
+  console.log(`zipDir : ${c.zipDir ?? color.dim(`(belum diatur → ${path.join(os.homedir(), 'Downloads')})`)}`);
+};
+
+if (o['reset-config']) {
+  resetConfig();
+  log.ok('Config dihapus.');
+  process.exit(0);
+}
+if (o['set-root'] || o['set-zip']) {
+  const next = { ...cfg };
+  if (o['set-root']) next.root = dirOrDie(o['set-root']);
+  if (o['set-zip']) next.zipDir = dirOrDie(o['set-zip']);
+  saveConfig(next);
+  log.ok('Config disimpan.');
+  showConfig(next);
+  process.exit(0);
+}
+if (o['show-config']) {
+  showConfig(cfg);
+  process.exit(0);
+}
+
+const root = path.resolve(o.root ?? cfg.root ?? process.cwd());
 if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
   log.err(`Root tidak ditemukan: ${root}`);
   process.exit(1);
@@ -129,7 +172,7 @@ log.info(`RyClip aktif → ${color.bold(root)}${o['dry-run'] ? color.yellow(' [d
 monitor.start();
 
 let zipWatcher = null;
-const zipDir = o['watch-zip'] ? path.resolve(o['watch-zip']) : o.zip ? path.join(os.homedir(), 'Downloads') : null;
+const zipDir = o['watch-zip'] ? path.resolve(o['watch-zip']) : o.zip ? path.resolve(cfg.zipDir ?? path.join(os.homedir(), 'Downloads')) : null;
 if (zipDir) {
   if (!fs.existsSync(zipDir)) {
     log.err(`Folder zip tidak ditemukan: ${zipDir}`);

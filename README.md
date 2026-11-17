@@ -37,6 +37,17 @@ Zip baru yang masuk (setelah download selesai) dianalisis dulu: daftar file baru
 
 Ekstraksi lewat `tar` (Windows 10+/macOS) atau `unzip`. Zip dengan entry `..`/absolut ditolak seluruhnya, folder pembungkus tunggal dibuang otomatis, dan semua file lewat aturan keamanan yang sama dengan clipboard (backup, atomic, dedupe, `.env`/`.git` diblok). Batas: 500 file, 50 MB.
 
+## Atur lokasi permanen
+
+```bat
+ryclip --set-root D:\Rayhand\RyCode     :: repo target
+ryclip --set-zip  D:\Download            :: folder hasil download
+ryclip --show-config                      :: lihat
+ryclip --reset-config                     :: hapus
+```
+
+Disimpan di `~/.ryclip.json` (Windows: `C:\Users\<lu>\.ryclip.json`). Prioritas: flag CLI > config > default (root = folder saat ini, zip = `~/Downloads`). Setelah diatur, cukup `ryclip --zip` dari folder mana pun.
+
 ## Keamanan
 
 Path absolut, `..`, symlink keluar root, `.git/`, `node_modules/`, dan `.env*` ditolak. Penulisan atomic (tmp + rename), file lama dibackup, isi identik tidak ditulis ulang. Tambahkan `.ryclip-backup/` ke `.gitignore` repo target.
