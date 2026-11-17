@@ -111,14 +111,24 @@ const { default: clipboard } = await import('clipboardy').catch(() => {
 let chain = Promise.resolve();
 const serial = (fn) => (chain = chain.then(fn, fn));
 
-async function ask(question) {
-  if (!process.stdin.isTTY) return null;
+// Tidak bergantung pada stdin.isTTY (Git Bash/mintty melaporkan non-TTY padahal interaktif).
+// stdin tertutup (EOF / dijalankan tanpa input) → resolve null.
+let stdinClosed = false;
+function ask(question) {
+  if (stdinClosed) return Promise.resolve(null);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    return (await rl.question(`${color.cyan('?')} ${question}`)).trim() || null;
-  } finally {
-    rl.close();
-  }
+  return new Promise((resolve) => {
+    let answered = false;
+    rl.once('close', () => {
+      if (!answered) stdinClosed = true; // EOF sebelum ada jawaban
+      resolve(null);
+    });
+    rl.question(`${color.cyan('?')} ${question}`, (ans) => {
+      answered = true;
+      resolve(ans.trim() || null);
+      rl.close();
+    });
+  });
 }
 
 const askTarget = (lines) => (o.yes ? null : ask(`Clipboard ${lines} baris tanpa @file. Path tujuan (kosong = skip): `));

@@ -57,4 +57,12 @@ test('watcher: abaikan zip lama, proses zip baru setelah ukuran stabil, sekali s
   await w.scan(); // stabil → proses
   await w.scan();
   assert.deepEqual(got, ['baru.zip']);
+
+  // mtime berubah (disentuh antivirus/browser) dengan ukuran sama → tidak diproses ulang
+  const later = new Date(Date.now() + 60_000);
+  await fs.utimes(path.join(dir, 'baru.zip'), later, later);
+  await w.scan();
+  await w.scan();
+  await w.scan();
+  assert.deepEqual(got, ['baru.zip']);
 });

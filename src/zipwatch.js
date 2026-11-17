@@ -140,7 +140,7 @@ export function createZipWatcher({ dir, onZip, onError = () => {}, interval = 10
         const p = path.join(dir, n);
         const st = await fs.stat(p).catch(() => null);
         if (!st || !st.isFile() || st.size === 0) continue;
-        const key = `${p}|${st.size}|${st.mtimeMs}`;
+        const key = `${p}|${st.size}`; // mtime sengaja tidak dipakai: antivirus/browser bisa menyentuhnya setelah download
         if (seen.has(key)) continue;
         if (first && !includeExisting) {
           seen.add(key);
