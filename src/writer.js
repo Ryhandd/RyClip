@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { sha1 } from './utils.js';
 
 const BLOCKED_DIRS = new Set(['.git', 'node_modules', '.ryclip-backup']);
 
@@ -50,16 +49,17 @@ export async function resolveTarget(root, target) {
 export async function writeTarget({ root, target, content, dryRun = false, backup = true }) {
   const { abs, rel } = await resolveTarget(root, target);
 
+  const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8');
   let existing = null;
   try {
-    existing = await fs.readFile(abs, 'utf8');
+    existing = await fs.readFile(abs);
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
   }
 
   // Deteksi duplikasi: isi identik dengan yang ada di disk → jangan tulis ulang.
-  if (existing !== null && sha1(existing) === sha1(content)) return { status: 'unchanged', rel };
-  if (dryRun) return { status: 'dry-run', rel };
+  if (existing !== null && existing.equals(data)) return { status: 'unchanged', rel };
+  if (dryRun) return { status: 'dry-run', would: existing === null ? 'created' : 'updated', rel };
 
   let backupPath;
   if (existing !== null && backup) {
@@ -71,7 +71,7 @@ export async function writeTarget({ root, target, content, dryRun = false, backu
 
   await fs.mkdir(path.dirname(abs), { recursive: true });
   const tmp = `${abs}.ryclip.tmp`;
-  await fs.writeFile(tmp, content, 'utf8');
+  await fs.writeFile(tmp, data);
   await fs.rename(tmp, abs); // atomic: tidak ada file setengah-tertulis
 
   return {

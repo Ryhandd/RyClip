@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import os from 'node:os';
 import fs from 'node:fs';
 import readline from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { createMonitor } from './src/monitor.js';
 import { parseClipboard } from './src/parser.js';
 import { writeTarget } from './src/writer.js';
+import { createZipWatcher, processZip } from './src/zipwatch.js';
 import { log, color } from './src/utils.js';
 
 const HELP = `RyClip — clipboard → file injector
@@ -19,7 +21,10 @@ const HELP = `RyClip — clipboard → file injector
   --no-backup        jangan backup file lama ke .ryclip-backup/
   --keep-tag         pertahankan baris // @file: di dalam file hasil
   --yes              clipboard tanpa @file di-skip otomatis (tanpa prompt)
-  --initial          proses juga isi clipboard saat start
+  --initial          proses juga isi clipboard / zip yang sudah ada saat start
+  --watch-zip <dir>  pantau folder untuk .zip baru, ekstrak ke root (dengan konfirmasi)
+  --zip              sama seperti --watch-zip, folder = ~/Downloads
+  --yes-zip          terapkan zip tanpa konfirmasi (backup tetap dibuat)
   -h, --help         bantuan
 
 Tag (baris pertama): // @file: src/app.js   |   # @file: scripts/x.sh   |   /* @file: a.css */`;
@@ -34,6 +39,9 @@ const { values: o } = parseArgs({
     'keep-tag': { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
     initial: { type: 'boolean', default: false },
+    'watch-zip': { type: 'string' },
+    zip: { type: 'boolean', default: false },
+    'yes-zip': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
 });
@@ -56,17 +64,25 @@ const { default: clipboard } = await import('clipboardy').catch(() => {
   process.exit(1);
 });
 
-async function askTarget(lines) {
-  if (o.yes || !process.stdin.isTTY) return null;
+// Semua aksi (clipboard & zip) berjalan berurutan agar prompt tidak tabrakan.
+let chain = Promise.resolve();
+const serial = (fn) => (chain = chain.then(fn, fn));
+
+async function ask(question) {
+  if (!process.stdin.isTTY) return null;
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const ans = await rl.question(
-      `${color.cyan('?')} Clipboard ${lines} baris tanpa @file. Path tujuan (kosong = skip): `,
-    );
-    return ans.trim() || null;
+    return (await rl.question(`${color.cyan('?')} ${question}`)).trim() || null;
   } finally {
     rl.close();
   }
+}
+
+const askTarget = (lines) => (o.yes ? null : ask(`Clipboard ${lines} baris tanpa @file. Path tujuan (kosong = skip): `));
+
+async function confirm(question) {
+  if (o['yes-zip']) return true;
+  return /^y(a|es)?$/i.test((await ask(`${question} [y/N] `)) || '');
 }
 
 async function handle(raw) {
@@ -102,7 +118,7 @@ async function handle(raw) {
 
 const monitor = createMonitor({
   read: () => clipboard.read(),
-  onChange: handle,
+  onChange: (raw) => serial(() => handle(raw)),
   onError: (e) => log.err(`Clipboard: ${e.message}`),
   interval,
   includeInitial: o.initial,
@@ -112,9 +128,28 @@ if (!fs.existsSync(path.join(root, '.git'))) log.skip('Peringatan: root bukan re
 log.info(`RyClip aktif → ${color.bold(root)}${o['dry-run'] ? color.yellow(' [dry-run]') : ''}  (Ctrl+C untuk berhenti)`);
 monitor.start();
 
+let zipWatcher = null;
+const zipDir = o['watch-zip'] ? path.resolve(o['watch-zip']) : o.zip ? path.join(os.homedir(), 'Downloads') : null;
+if (zipDir) {
+  if (!fs.existsSync(zipDir)) {
+    log.err(`Folder zip tidak ditemukan: ${zipDir}`);
+    process.exit(1);
+  }
+  zipWatcher = createZipWatcher({
+    dir: zipDir,
+    includeExisting: o.initial,
+    onZip: (zip) =>
+      serial(() => processZip({ zip, root, dryRun: o['dry-run'], backup: !o['no-backup'], confirm })).catch((e) => log.err(`${path.basename(zip)}: ${e.message}`)),
+    onError: (e) => log.err(`Zip watcher: ${e.message}`),
+  });
+  log.info(`Pantau zip → ${color.bold(zipDir)}`);
+  zipWatcher.start();
+}
+
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     monitor.stop();
+    zipWatcher?.stop();
     log.info('Berhenti.');
     process.exit(0);
   });
