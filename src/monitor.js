@@ -9,12 +9,14 @@ export function createMonitor({ read, onChange, onError = () => {}, interval = 5
   let last = null;
   let timer = null;
   let busy = false;
+  let failing = false;
 
   async function tick() {
     if (busy) return;
     busy = true;
     try {
       const text = await read();
+      failing = false;
       const hash = sha1(text);
       if (last === null && !includeInitial) {
         last = hash; // abaikan isi clipboard yang sudah ada saat start
@@ -25,7 +27,11 @@ export function createMonitor({ read, onChange, onError = () => {}, interval = 5
       if (!text.trim()) return;
       await onChange(text, hash);
     } catch (e) {
-      onError(e);
+      // Clipboard bisa gagal dibaca sesaat (isi bukan teks, dikunci app lain). Lapor sekali per rentetan gagal.
+      if (!failing) {
+        failing = true;
+        onError(e);
+      }
     } finally {
       busy = false;
     }

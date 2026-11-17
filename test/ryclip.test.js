@@ -53,6 +53,34 @@ test('writer: dry-run tidak menulis', async () => {
   await assert.rejects(fs.access(path.join(root, 'n.js')));
 });
 
+test('monitor: error baca clipboard dilaporkan sekali per rentetan, lalu pulih', async () => {
+  let mode = 'ok';
+  let clip = 'a';
+  const errs = [];
+  const seen = [];
+  const m = createMonitor({
+    read: async () => {
+      if (mode === 'fail') throw new Error('x');
+      return clip;
+    },
+    onChange: async (t) => seen.push(t),
+    onError: (e) => errs.push(e.message),
+  });
+  await m.tick(); // isi awal
+  mode = 'fail';
+  await m.tick();
+  await m.tick();
+  await m.tick();
+  assert.equal(errs.length, 1);
+  mode = 'ok';
+  clip = 'b';
+  await m.tick();
+  assert.deepEqual(seen, ['b']); // tetap jalan setelah pulih
+  mode = 'fail';
+  await m.tick();
+  assert.equal(errs.length, 2); // rentetan baru dilaporkan lagi
+});
+
 test('monitor: abaikan isi awal, emit hanya saat berubah', async () => {
   let clip = 'awal';
   const seen = [];

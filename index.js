@@ -135,7 +135,12 @@ const askTarget = (lines) => (o.yes ? null : ask(`Clipboard ${lines} baris tanpa
 
 async function confirm(question) {
   if (o['yes-zip']) return true;
-  return /^y(a|es)?$/i.test((await ask(`${question} [y/N] `)) || '');
+  const ans = await ask(`${question} [y/N] `);
+  if (stdinClosed) {
+    console.log();
+    log.err('Terminal ini tidak meneruskan input ke RyClip, jadi tidak bisa konfirmasi. Jalankan di PowerShell/CMD/Windows Terminal, atau pakai --yes-zip.');
+  }
+  return /^y(a|es)?$/i.test(ans || '');
 }
 
 async function handle(raw) {
@@ -172,7 +177,7 @@ async function handle(raw) {
 const monitor = createMonitor({
   read: () => clipboard.read(),
   onChange: (raw) => serial(() => handle(raw)),
-  onError: (e) => log.err(`Clipboard: ${e.message}`),
+  onError: () => log.skip('Clipboard tidak terbaca (isi bukan teks, kosong, atau dipakai app lain). Dilewati sampai terbaca lagi.'),
   interval,
   includeInitial: o.initial,
 });
