@@ -2,7 +2,6 @@
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import readline from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { createMonitor } from './src/monitor.js';
 import { parseClipboard } from './src/parser.js';
@@ -10,6 +9,7 @@ import { writeTarget } from './src/writer.js';
 import { createZipWatcher, processZip } from './src/zipwatch.js';
 import { loadConfig, saveConfig, resetConfig, configPath } from './src/config.js';
 import { log, color } from './src/utils.js';
+import { ask, isStdinClosed } from './src/prompt.js';
 
 const HELP = `RyClip — clipboard → file injector
 
@@ -111,32 +111,12 @@ const { default: clipboard } = await import('clipboardy').catch(() => {
 let chain = Promise.resolve();
 const serial = (fn) => (chain = chain.then(fn, fn));
 
-// Tidak bergantung pada stdin.isTTY (Git Bash/mintty melaporkan non-TTY padahal interaktif).
-// stdin tertutup (EOF / dijalankan tanpa input) → resolve null.
-let stdinClosed = false;
-function ask(question) {
-  if (stdinClosed) return Promise.resolve(null);
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    let answered = false;
-    rl.once('close', () => {
-      if (!answered) stdinClosed = true; // EOF sebelum ada jawaban
-      resolve(null);
-    });
-    rl.question(`${color.cyan('?')} ${question}`, (ans) => {
-      answered = true;
-      resolve(ans.trim() || null);
-      rl.close();
-    });
-  });
-}
-
-const askTarget = (lines) => (o.yes ? null : ask(`Clipboard ${lines} baris tanpa @file. Path tujuan (kosong = skip): `));
+const askTarget = (lines) => (o.yes ? null : ask(`${color.cyan('?')} Clipboard ${lines} baris tanpa @file. Path tujuan (kosong = skip): `));
 
 async function confirm(question) {
   if (o['yes-zip']) return true;
-  const ans = await ask(`${question} [y/N] `);
-  if (stdinClosed) {
+  const ans = await ask(`${color.cyan('?')} ${question} [y/N] `);
+  if (isStdinClosed()) {
     console.log();
     log.err('Terminal ini tidak meneruskan input ke RyClip, jadi tidak bisa konfirmasi. Jalankan di PowerShell/CMD/Windows Terminal, atau pakai --yes-zip.');
   }
