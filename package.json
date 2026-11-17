@@ -1,0 +1,26 @@
+{
+  "name": "ryclip",
+  "version": "1.0.0",
+  "description": "Pantau clipboard dan inject blok kode AI ke repository berdasarkan tag // @file: path/to/file",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "ryclip": "index.js"
+  },
+  "files": [
+    "index.js",
+    "src"
+  ],
+  "scripts": {
+    "start": "node index.js",
+    "dry": "node index.js --dry-run",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "clipboardy": "^4.0.0"
+  },
+  "license": "MIT"
+}
